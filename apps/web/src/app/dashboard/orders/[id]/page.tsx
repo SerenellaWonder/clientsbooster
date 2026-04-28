@@ -1,23 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
-import DashboardHeader from "@/components/dashboard/header";
-import { apiFetch } from "@/lib/api";
-import { removeToken } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { API_URL } from "@/lib/api";
+import { getToken, removeToken } from "@/lib/auth";
 
 type Order = {
   id: number;
   customer_name: string;
   customer_email: string;
-  customer_phone: string;
-  shipping_address: string;
-  notes: string;
+  customer_phone?: string | null;
+  shipping_address?: string | null;
+  notes?: string | null;
   total: string;
   status: string;
   payment_status: string;
+  created_at: string;
 };
 
 type OrderItem = {
@@ -28,198 +27,317 @@ type OrderItem = {
   image_url?: string | null;
 };
 
-export default function OrderDetailPage() {
-  const params = useParams<{ id: string }>();
+const ORDER_STATUSES = [
+  "pending",
+  "processing",
+  "shipped",
+  "completed",
+  "cancelled",
+];
+
+const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"];
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("it-IT");
+}
+
+function formatCurrency(value: string | number) {
+  return `€ ${Number(value || 0).toFixed(2)}`;
+}
+
+export default function VendorOrderDetailPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
+
   const [order, setOrder] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
-  const [status, setStatus] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState("");
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  async function loadOrder() {
-    try {
-      const data = await apiFetch(`/api/vendor/orders/${params.id}`);
-      setOrder(data.order);
-      setItems(data.items || []);
-      setStatus(data.order?.status || "");
-      setPaymentStatus(data.order?.payment_status || "");
-    } catch {
-      removeToken();
-      router.push("/login");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [status, setStatus] = useState("pending");
+  const [paymentStatus, setPaymentStatus] = useState("pending");
 
   useEffect(() => {
+    async function loadOrder() {
+      const token = getToken();
+
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/api/vendor/orders/${params.id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Errore caricamento ordine");
+        }
+
+        setOrder(data.order);
+        setItems(data.items || []);
+        setStatus(data.order.status || "pending");
+        setPaymentStatus(data.order.payment_status || "pending");
+      } catch (err: any) {
+        setError(err.message || "Errore caricamento ordine");
+      } finally {
+        setLoading(false);
+      }
+    }
+
     if (params?.id) {
       loadOrder();
     }
-  }, [params?.id]);
+  }, [params, router]);
 
-  async function handleUpdate() {
-    setMessage("");
+  async function handleSave(e: FormEvent) {
+    e.preventDefault();
+    if (!order) return;
 
-    await apiFetch(`/api/vendor/orders/${params.id}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status,
-        payment_status: paymentStatus,
-      }),
-    });
+    setSaving(true);
+    setError("");
+    setSuccess("");
 
-    setMessage("Ordine aggiornato correttamente");
-    await loadOrder();
+    try {
+      const token = getToken();
+
+      const res = await fetch(`${API_URL}/api/vendor/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status,
+          payment_status: paymentStatus,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Errore aggiornamento ordine");
+      }
+
+      setOrder(data.order);
+      setSuccess("Ordine aggiornato correttamente");
+    } catch (err: any) {
+      setError(err.message || "Errore aggiornamento ordine");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
-    return <div className="text-slate-400">Caricamento ordine...</div>;
+    return <div className="text-[#5b667a]">Caricamento ordine...</div>;
   }
 
   if (!order) {
-    return <div className="text-slate-400">Ordine non trovato</div>;
+    return <div className="text-[#5b667a]">Ordine non trovato.</div>;
   }
 
   return (
     <div>
-      <div className="mb-4">
-        <Link href="/dashboard/orders" className="text-sm text-slate-400 hover:text-white">
-          ← Torna agli ordini
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-[0.25em] text-[#25b7f3]">
+            Clients Booster
+          </p>
+          <h1 className="mt-3 text-4xl font-black tracking-[-0.04em] text-[#0b1220]">
+            Ordine #{order.id}
+          </h1>
+          <p className="mt-3 text-lg leading-8 text-[#5b667a]">
+            Dettaglio completo ordine e aggiornamento stati.
+          </p>
+        </div>
+
+        <Link
+          href="/dashboard/orders"
+          className="rounded-full border border-[#dbe2ee] bg-white px-5 py-2.5 text-sm font-semibold text-[#1b2435]"
+        >
+          ← Ordini
         </Link>
       </div>
 
-      <DashboardHeader
-        title={`Ordine #${order.id}`}
-        subtitle="Dettaglio e gestione ordine"
-      />
+      {error ? (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-[0_18px_40px_rgba(2,6,23,0.22)] backdrop-blur">
-          <h2 className="text-xl font-semibold text-white">Dati cliente</h2>
+      {success ? (
+        <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {success}
+        </div>
+      ) : null}
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Nome</p>
-              <p className="mt-2 text-base font-medium text-slate-200">
-                {order.customer_name}
-              </p>
-            </div>
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
+          <div className="card-ui p-6">
+            <h2 className="text-2xl font-black text-[#0b1220]">Cliente</h2>
 
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Email</p>
-              <p className="mt-2 text-base font-medium text-slate-200">
-                {order.customer_email}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Telefono</p>
-              <p className="mt-2 text-base font-medium text-slate-200">
-                {order.customer_phone || "-"}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Indirizzo</p>
-              <p className="mt-2 text-base font-medium text-slate-200">
-                {order.shipping_address}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 sm:col-span-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Note</p>
-              <p className="mt-2 text-base font-medium text-slate-200">
-                {order.notes || "-"}
-              </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <InfoBox label="Nome" value={order.customer_name} />
+              <InfoBox label="Email" value={order.customer_email} />
+              <InfoBox label="Telefono" value={order.customer_phone || "—"} />
+              <InfoBox label="Data" value={formatDate(order.created_at)} />
+              <InfoBox
+                label="Indirizzo"
+                value={order.shipping_address || "—"}
+                full
+              />
+              <InfoBox label="Note" value={order.notes || "—"} full />
             </div>
           </div>
 
-          <h2 className="mt-8 text-xl font-semibold text-white">Articoli ordine</h2>
+          <div className="card-ui p-6">
+            <h2 className="text-2xl font-black text-[#0b1220]">
+              Prodotti ordine
+            </h2>
 
-          <div className="mt-5 space-y-4">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="font-semibold text-white">{item.title}</h3>
-                    <p className="mt-1 text-sm text-slate-400">
-                      Quantità: {item.quantity}
-                    </p>
-                  </div>
-
-                  <div className="text-right font-semibold text-white">
-                    € {item.price}
-                  </div>
+            <div className="mt-5 space-y-4">
+              {items.length === 0 ? (
+                <div className="rounded-2xl border border-[#e6eaf2] bg-[#fbfcff] p-4 text-[#5b667a]">
+                  Nessun prodotto.
                 </div>
-              </div>
-            ))}
+              ) : (
+                items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-[24px] border border-[#e6eaf2] bg-[#fbfcff] p-4"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-lg font-bold text-[#0b1220]">
+                          {item.title}
+                        </p>
+                        <p className="text-sm text-[#5b667a]">
+                          Quantità: {item.quantity}
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-sm text-[#5b667a]">Prezzo</p>
+                        <p className="text-lg font-black text-[#0b1220]">
+                          {formatCurrency(item.price)}
+                        </p>
+                        <p className="text-sm text-[#5b667a]">
+                          Totale:{" "}
+                          {formatCurrency(Number(item.price) * item.quantity)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-[0_18px_40px_rgba(2,6,23,0.22)] backdrop-blur">
-          <h2 className="text-xl font-semibold text-white">Stato ordine</h2>
+        <div className="space-y-6">
+          <div className="card-ui p-6">
+            <h2 className="text-2xl font-black text-[#0b1220]">
+              Azioni ordine
+            </h2>
 
-          <div className="mt-5 space-y-4">
-            <div>
-              <label className="mb-2 block text-sm text-slate-400">
-                Stato ordine
-              </label>
-              <select
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white"
+            <form onSubmit={handleSave} className="mt-5 space-y-4">
+              <SelectField
+                label="Stato ordine"
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
-              >
-                <option value="pending" className="text-black">pending</option>
-                <option value="processing" className="text-black">processing</option>
-                <option value="shipped" className="text-black">shipped</option>
-                <option value="completed" className="text-black">completed</option>
-                <option value="cancelled" className="text-black">cancelled</option>
-              </select>
-            </div>
+                onChange={setStatus}
+                options={ORDER_STATUSES}
+              />
 
-            <div>
-              <label className="mb-2 block text-sm text-slate-400">
-                Stato pagamento
-              </label>
-              <select
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-white"
+              <SelectField
+                label="Stato pagamento"
                 value={paymentStatus}
-                onChange={(e) => setPaymentStatus(e.target.value)}
-              >
-                <option value="pending" className="text-black">pending</option>
-                <option value="paid" className="text-black">paid</option>
-                <option value="failed" className="text-black">failed</option>
-                <option value="refunded" className="text-black">refunded</option>
-              </select>
-            </div>
+                onChange={setPaymentStatus}
+                options={PAYMENT_STATUSES}
+              />
 
-            <div className="rounded-2xl border border-cyan-300/15 bg-cyan-400/10 p-4">
-              <p className="text-sm text-cyan-100">Totale ordine</p>
-              <p className="mt-2 text-3xl font-semibold text-white">
-                € {order.total}
-              </p>
-            </div>
-
-            {message ? (
-              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
-                {message}
+              <div className="rounded-2xl border border-[#cfeffd] bg-[#eef9fe] p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#0d5b82]">
+                  Totale ordine
+                </p>
+                <p className="mt-2 text-2xl font-black text-[#0b1220]">
+                  {formatCurrency(order.total)}
+                </p>
               </div>
-            ) : null}
 
-            <button
-              onClick={handleUpdate}
-              className="w-full rounded-2xl bg-white px-4 py-3 font-semibold text-slate-950 transition hover:opacity-90"
-            >
-              Salva aggiornamenti
-            </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-full bg-[#25b7f3] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {saving ? "Salvataggio..." : "Salva modifiche"}
+              </button>
+            </form>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  return (
+    <div className="rounded-2xl border border-[#e6eaf2] bg-[#fbfcff] p-4">
+      <label className="text-xs uppercase tracking-[0.2em] text-[#5b667a]">
+        {label}
+      </label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-3 w-full rounded-2xl border border-[#dbe2ee] bg-white px-4 py-3 outline-none"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function InfoBox({
+  label,
+  value,
+  full,
+}: {
+  label: string;
+  value: string;
+  full?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-[#e6eaf2] bg-[#fbfcff] p-4 ${
+        full ? "sm:col-span-2" : ""
+      }`}
+    >
+      <p className="text-xs uppercase tracking-[0.2em] text-[#5b667a]">
+        {label}
+      </p>
+      <p className="mt-2 text-base font-semibold text-[#0b1220]">
+        {value}
+      </p>
     </div>
   );
 }
