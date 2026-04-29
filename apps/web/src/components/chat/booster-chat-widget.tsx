@@ -187,13 +187,13 @@ export default function BoosterChatWidget() {
     try {
       const token = getRoleToken(role);
 
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-      };
+      const headers: Record<string, string> = {
+  "Content-Type": "application/json",
+};
 
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
+if (token) {
+  headers["Authorization"] = `Bearer ${token}`;
+}
 
       const res = await fetch(`${API_URL}/api/ai/chat`, {
         method: "POST",

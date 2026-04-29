@@ -5,14 +5,13 @@ export const API_URL = "http://localhost:9000";
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = getToken();
 
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
+  const headers: Record<string, string> = {
+  "Content-Type": "application/json",
+};
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+if (token) {
+  headers["Authorization"] = `Bearer ${token}`;
+}
 
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
