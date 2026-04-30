@@ -1,12 +1,20 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { Suspense, useState, FormEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { API_URL } from "@/lib/api";
 
 const ADMIN_PRIMARY = "#0d5b82";
 
-export default function ResetPasswordAdmin() {
+export default function ResetPasswordAdminPage() {
+  return (
+    <Suspense fallback={<p className="p-10">Caricamento...</p>}>
+      <ResetPasswordAdmin />
+    </Suspense>
+  );
+}
+
+function ResetPasswordAdmin() {
   const params = useSearchParams();
   const router = useRouter();
 
@@ -45,11 +53,11 @@ export default function ResetPasswordAdmin() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8fc] flex items-center justify-center px-4">
-      <div className="w-full max-w-md bg-white p-6 rounded-[28px] border shadow-sm">
-        <h1 className="text-2xl font-black mb-4">Nuova password</h1>
+    <main className="flex min-h-screen items-center justify-center bg-[#f7f8fc] px-4">
+      <div className="w-full max-w-md rounded-[28px] border bg-white p-6 shadow-sm">
+        <h1 className="mb-4 text-2xl font-black">Nuova password</h1>
 
-        {error && <p className="text-red-500 mb-3">{error}</p>}
+        {error ? <p className="mb-3 text-red-500">{error}</p> : null}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
@@ -58,11 +66,11 @@ export default function ResetPasswordAdmin() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full border px-4 py-3 rounded-xl"
+            className="w-full rounded-xl border px-4 py-3"
           />
 
           <button
-            className="w-full py-3 rounded-full text-white"
+            className="w-full rounded-full py-3 text-white"
             style={{ background: ADMIN_PRIMARY }}
           >
             {loading ? "Salvataggio..." : "Aggiorna password"}
