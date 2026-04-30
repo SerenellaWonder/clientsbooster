@@ -1,11 +1,19 @@
 "use client";
 
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState } from "react";
 import { API_URL } from "@/lib/api";
 import { getCustomerToken } from "@/lib/auth";
 
-export default function NewConversationPage() {
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10">Caricamento...</div>}>
+      <NewConversationPage />
+    </Suspense>
+  );
+}
+
+function NewConversationPage() {
   const params = useSearchParams();
   const router = useRouter();
 
@@ -22,17 +30,19 @@ export default function NewConversationPage() {
     setError("");
 
     try {
+      const token = getCustomerToken();
+
       const res = await fetch(`${API_URL}/api/customers/conversations`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${getCustomerToken()}`,
-  },
-  body: JSON.stringify({
-    product_id: Number(productId),
-    message,
-  }),
-});
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          product_id: Number(productId),
+          message,
+        }),
+      });
 
       const data = await res.json();
 
@@ -40,7 +50,6 @@ export default function NewConversationPage() {
         throw new Error(data.error || "Errore invio messaggio");
       }
 
-      // 🔥 redirect alla chat appena creata
       router.push(`/customer/messages/${data.conversation.id}`);
     } catch (err: any) {
       setError(err.message || "Errore invio messaggio");
@@ -53,7 +62,6 @@ export default function NewConversationPage() {
     <main className="min-h-screen bg-[#f7f8fc] px-4 py-10">
       <div className="mx-auto max-w-xl">
         <div className="rounded-[28px] border border-[#e6eaf2] bg-white p-6 shadow-sm">
-          
           <h1 className="text-2xl font-black text-[#0b1220]">
             Contatta il venditore
           </h1>
