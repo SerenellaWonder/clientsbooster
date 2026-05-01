@@ -127,6 +127,61 @@ async function sendVendorTicketReplyEmail({
   });
 }
 
+async function sendWelcomeCustomerEmail({ to, name }) {
+  if (!to || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
+
+  await mailer.sendMail({
+    from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: "Benvenuto su Clients Booster",
+    text: `Ciao ${name || ""},
+
+il tuo account cliente è stato creato correttamente.
+
+Puoi accedere da qui:
+${process.env.FRONTEND_URL || "http://localhost:3000"}/customer/login
+
+Grazie,
+Clients Booster`,
+  });
+}
+
+async function sendLoginNotificationEmail({ to, name }) {
+  if (!to || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
+
+  await mailer.sendMail({
+    from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: "Accesso effettuato su Clients Booster",
+    text: `Ciao ${name || ""},
+
+abbiamo rilevato un accesso al tuo account Clients Booster.
+
+Se sei stato tu, non devi fare nulla.
+
+Grazie,
+Clients Booster`,
+  });
+}
+
+async function sendPasswordResetEmail({ to, resetUrl }) {
+  if (!to || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
+
+  await mailer.sendMail({
+    from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: "Reset password Clients Booster",
+    text: `Hai richiesto il reset della password.
+
+Clicca qui per scegliere una nuova password:
+${resetUrl}
+
+Il link scade tra 30 minuti.
+
+Se non hai richiesto tu il reset, ignora questa email.`,
+  });
+}
+
 /* ------------------ MULTER ------------------ */
 
 const storage = multer.diskStorage({
@@ -201,6 +256,27 @@ app.post("/api/auth/register-vendor", async (req, res) => {
       `,
       [email, hashedPassword, tenant.id]
     );
+
+    try {
+  await mailer.sendMail({
+    from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
+    to: userResult.rows[0].email,
+    subject: "Benvenuto su Clients Booster Vendor",
+    text: `Ciao,
+
+il tuo account venditore è stato creato correttamente.
+
+Store: ${tenant.name}
+
+Puoi accedere da qui:
+${process.env.FRONTEND_URL || "http://localhost:3000"}/login
+
+Grazie,
+Clients Booster`,
+  });
+} catch (e) {
+  console.error("VENDOR WELCOME EMAIL ERROR:", e.message);
+}
 
     res.json({
       message: "Vendor creato correttamente",
@@ -282,6 +358,33 @@ app.post("/api/customers/register", async (req, res) => {
       [email, hashed, name]
     );
 
+    try {
+  await sendWelcomeCustomerEmail({
+    to: result.rows[0].email,
+    name: result.rows[0].name,
+  });
+} catch (e) {
+  console.error("WELCOME EMAIL ERROR:", e.message);
+}
+
+try {
+  await mailer.sendMail({
+    from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
+    to: result.rows[0].email,
+    subject: "Benvenuto su Clients Booster",
+    text: `Ciao ${result.rows[0].name || ""},
+
+il tuo account cliente è stato creato correttamente.
+
+Puoi accedere da qui:
+${process.env.FRONTEND_URL || "http://localhost:3000"}/customer/login
+
+Grazie,
+Clients Booster`,
+  });
+} catch (e) {
+  console.error("WELCOME EMAIL ERROR:", e.message);
+}
     res.json({
       message: "Cliente registrato correttamente",
       customer: result.rows[0],
@@ -321,6 +424,15 @@ app.post("/api/customers/login", async (req, res) => {
       "customer-secret",
       { expiresIn: "7d" }
     );
+
+    try {
+  await sendLoginNotificationEmail({
+    to: customer.email,
+    name: customer.name,
+  });
+} catch (e) {
+  console.error("LOGIN EMAIL ERROR:", e.message);
+}
 
     res.json({
       message: "Login cliente ok",
@@ -1620,6 +1732,7 @@ app.post("/api/stripe/checkout", async (req, res) => {
    PASSWORD RESET
 ======================================================= */
 
+
 app.post("/api/password/forgot", async (req, res) => {
   const { email, user_type } = req.body;
 
@@ -1669,8 +1782,19 @@ app.post("/api/password/forgot", async (req, res) => {
         ? `/customer/reset-password?token=${token}`
         : `/reset-password?token=${token}`;
 
+    const resetUrl = `${baseUrl}${resetPath}`;
+
     console.log("RESET PASSWORD LINK:");
-    console.log(`${baseUrl}${resetPath}`);
+    console.log(resetUrl);
+
+    try {
+      await sendPasswordResetEmail({
+        to: email,
+        resetUrl,
+      });
+    } catch (e) {
+      console.error("RESET EMAIL ERROR:", e.message);
+    }
 
     return res.json({
       message: "Se l'account esiste, riceverai le istruzioni di reset",
@@ -1678,77 +1802,6 @@ app.post("/api/password/forgot", async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Errore richiesta reset password" });
-  }
-});
-
-app.post("/api/password/reset", async (req, res) => {
-  const { token, password } = req.body;
-
-  if (!token || !password) {
-    return res.status(400).json({ error: "token e password sono obbligatori" });
-  }
-
-  try {
-    const resetResult = await pool.query(
-      `
-      SELECT *
-      FROM password_resets
-      WHERE token = $1 AND used = FALSE
-      ORDER BY created_at DESC
-      LIMIT 1
-      `,
-      [token]
-    );
-
-    if (!resetResult.rows.length) {
-      return res.status(400).json({ error: "Token non valido" });
-    }
-
-    const resetRow = resetResult.rows[0];
-    const now = new Date();
-    const expiresAt = new Date(resetRow.expires_at);
-
-    if (expiresAt < now) {
-      return res.status(400).json({ error: "Token scaduto" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    if (resetRow.user_type === "customer") {
-      await pool.query(
-        `
-        UPDATE customers
-        SET password = $1
-        WHERE email = $2
-        `,
-        [hashedPassword, resetRow.email]
-      );
-    } else if (resetRow.user_type === "vendor") {
-      await pool.query(
-        `
-        UPDATE users
-        SET password = $1
-        WHERE email = $2
-        `,
-        [hashedPassword, resetRow.email]
-      );
-    } else {
-      return res.status(400).json({ error: "Tipo utente non valido" });
-    }
-
-    await pool.query(
-      `
-      UPDATE password_resets
-      SET used = TRUE
-      WHERE id = $1
-      `,
-      [resetRow.id]
-    );
-
-    return res.json({ message: "Password aggiornata correttamente" });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Errore reset password" });
   }
 });
 
