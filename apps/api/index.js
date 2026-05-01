@@ -4116,6 +4116,8 @@ app.delete("/api/customers/conversations/:id", customerAuth, async (req, res) =>
   }
 });
 
-app.listen(10000, () => {
-  console.log("API running on http://localhost:10000");
+const PORT = process.env.PORT || 9000;
+
+app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
 });
