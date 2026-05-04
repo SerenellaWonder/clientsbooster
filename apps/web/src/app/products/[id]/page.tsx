@@ -4,6 +4,7 @@ import AddToCartButton from "@/components/store/add-to-cart-button";
 import ContactVendorButton from "@/components/store/contact-vendor-button";
 import ProductGallery from "@/components/store/product-gallery";
 import type { Metadata } from "next";
+import { API_URL } from "@/lib/api";
 
 import { notFound } from "next/navigation";
 import {
@@ -35,7 +36,7 @@ type Product = {
 
 async function getProduct(id: string): Promise<Product | null> {
   try {
-    const res = await fetch(`http://localhost:9000/api/public/products/${id}`, {
+    const res = await fetch(`${API_URL}/api/public/products/${id}`, {
       cache: "no-store",
     });
 

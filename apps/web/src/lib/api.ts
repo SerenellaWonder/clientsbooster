@@ -1,6 +1,7 @@
 import { getToken } from "@/lib/auth";
 
-export const API_URL = "http://localhost:9000";
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = getToken();

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { API_URL } from "@/lib/api";
 
 type Store = {
   id: number;
@@ -19,7 +20,7 @@ type Product = {
 };
 
 async function getStore(slug: string) {
-  const res = await fetch(`http://localhost:9000/api/public/stores/${slug}`, {
+  const res = await fetch(`${API_URL}/api/public/stores/${slug}`, {
     cache: "no-store",
   });
   if (!res.ok) return null;
@@ -29,7 +30,7 @@ async function getStore(slug: string) {
 
 async function getProducts(slug: string) {
   const res = await fetch(
-    `http://localhost:9000/api/public/stores/${slug}/products`,
+    `${API_URL}/api/public/stores/${slug}/products`,
     { cache: "no-store" }
   );
   if (!res.ok) return [];

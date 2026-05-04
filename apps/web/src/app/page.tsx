@@ -1,6 +1,7 @@
 import HeaderActions from "@/components/home/header-actions";
 import Image from "next/image";
 import Link from "next/link";
+import { API_URL } from "@/lib/api";
 import Footer from "@/components/home/footer";
 import {
   ArrowRight,
@@ -35,7 +36,7 @@ type Product = {
 
 async function getProducts(): Promise<Product[]> {
   try {
-    const res = await fetch("http://localhost:9000/api/public/products", {
+    const res = await fetch(`${API_URL}/api/public/products`, {
       cache: "no-store",
     });
 
