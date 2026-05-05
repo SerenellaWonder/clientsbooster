@@ -12,7 +12,24 @@ const { Parser } = require("json2csv");
 const Stripe = require("stripe");
 const crypto = require("crypto");
 const adminAuth = require("./middleware/adminAuth");
+const { Resend } = require("resend");
 const OpenAI = require("openai");
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
+
+async function sendEmail({ to, subject, html, text }) {
+  if (!resend || !to) return;
+
+  await resend.emails.send({
+    from: "Clients Booster <onboarding@resend.dev>",
+    to,
+    subject,
+    html,
+    text,
+  });
+}
+
 
 
 const pool = require("./db");
@@ -85,7 +102,7 @@ async function sendAdminTicketOpenedEmail({
 }) {
   if (!process.env.ADMIN_NOTIFICATION_EMAIL) return;
 
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to: process.env.ADMIN_NOTIFICATION_EMAIL,
     subject: `Nuovo ticket #${ticketId}`,
@@ -104,7 +121,7 @@ async function sendCustomerTicketReplyEmail({
 }) {
   if (!to) return;
 
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to,
     subject: `Risposta ticket #${ticketId}`,
@@ -119,7 +136,7 @@ async function sendVendorTicketReplyEmail({
 }) {
   if (!to) return;
 
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to,
     subject: `Risposta ticket #${ticketId}`,
@@ -130,7 +147,7 @@ async function sendVendorTicketReplyEmail({
 async function sendWelcomeCustomerEmail({ to, name }) {
   if (!to || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
 
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to,
     subject: "Benvenuto su Clients Booster",
@@ -149,7 +166,7 @@ Clients Booster`,
 async function sendLoginNotificationEmail({ to, name }) {
   if (!to || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
 
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to,
     subject: "Accesso effettuato su Clients Booster",
@@ -167,7 +184,7 @@ Clients Booster`,
 async function sendPasswordResetEmail({ to, resetUrl }) {
   if (!to || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) return;
 
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to,
     subject: "Reset password Clients Booster",
@@ -258,7 +275,7 @@ app.post("/api/auth/register-vendor", async (req, res) => {
     );
 
     try {
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to: userResult.rows[0].email,
     subject: "Benvenuto su Clients Booster Vendor",
@@ -368,7 +385,7 @@ app.post("/api/customers/register", async (req, res) => {
 }
 
 try {
-  await mailer.sendMail({
+  await sendMail({
     from: `"Clients Booster" <${process.env.EMAIL_USER}>`,
     to: result.rows[0].email,
     subject: "Benvenuto su Clients Booster",
