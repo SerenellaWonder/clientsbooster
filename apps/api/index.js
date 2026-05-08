@@ -532,7 +532,7 @@ app.get("/api/vendor/dashboard", authMiddleware, async (req, res) => {
 // MATCH COMPATIBILI
 app.get(
   "/api/vendor/partnerships/matches",
-  authenticateVendor,
+  authMiddleware,
   async (req, res) => {
     try {
       const vendorId = req.user.id;
@@ -659,7 +659,7 @@ app.get(
 // CREA PARTNERSHIP
 app.post(
   "/api/vendor/partnerships",
-  authenticateVendor,
+  authMiddleware,
   async (req, res) => {
     const { receiver_tenant_id, title, message } = req.body;
 
@@ -748,7 +748,7 @@ app.post(
 // LISTA PARTNERSHIP
 app.get(
   "/api/vendor/partnerships",
-  authenticateVendor,
+  authMiddleware,
   async (req, res) => {
     try {
       const vendorId = req.user.id;
@@ -794,7 +794,7 @@ app.get(
 // UPDATE STATUS
 app.patch(
   "/api/vendor/partnerships/:id/status",
-  authenticateVendor,
+  authMiddleware,
   async (req, res) => {
     const { status } = req.body;
 
