@@ -2,7 +2,7 @@
 
 import { MessageCircle, X } from "lucide-react";
 import { useState } from "react";
-import VendorChatPanel from "./vendor-chat-panel";
+//import VendorChatPanel from "./vendor-chat-panel";
 
 export default function VendorChatWidget({
   productId,
@@ -41,7 +41,7 @@ export default function VendorChatWidget({
             </button>
           </div>
 
-          <VendorChatPanel productId={productId} />
+         
         </div>
       ) : null}
     </div>
