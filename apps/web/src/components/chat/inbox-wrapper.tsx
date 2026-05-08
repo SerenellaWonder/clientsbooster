@@ -2,20 +2,21 @@
 
 import { useEffect, useState } from "react";
 import InboxWidget from "./inbox-widget";
-import { getToken } from "@/lib/auth";
-import { getCustomerToken } from "@/lib/auth";
+import { getCustomerToken, getToken } from "@/lib/auth";
+import { usePathname } from "next/navigation";
 
 export default function InboxWrapper() {
+  const pathname = usePathname();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const vendorToken = getToken();
-    const customerToken = getCustomerToken();
+    if (pathname.startsWith("/admin")) return;
 
-    if (vendorToken || customerToken) {
-      setVisible(true);
-    }
-  }, []);
+    const customerToken = getCustomerToken();
+    const vendorToken = getToken();
+
+    setVisible(!!customerToken || !!vendorToken);
+  }, [pathname]);
 
   if (!visible) return null;
 

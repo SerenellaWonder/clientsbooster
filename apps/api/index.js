@@ -525,6 +525,321 @@ app.get("/api/vendor/dashboard", authMiddleware, async (req, res) => {
   }
 });
 
+// ===============================
+// VENDOR PARTNERSHIPS
+// ===============================
+
+// MATCH COMPATIBILI
+app.get(
+  "/api/vendor/partnerships/matches",
+  authenticateVendor,
+  async (req, res) => {
+    try {
+      const vendorId = req.user.id;
+
+      const tenantResult = await pool.query(
+        `
+        SELECT id, store_name
+        FROM tenants
+        WHERE owner_user_id = $1
+        LIMIT 1
+      `,
+        [vendorId]
+      );
+
+      if (!tenantResult.rows.length) {
+        return res.status(404).json({
+          error: "Store non trovato",
+        });
+      }
+
+      const tenant = tenantResult.rows[0];
+
+      // categorie/tag del venditore corrente
+      const currentProducts = await pool.query(
+        `
+        SELECT category, tags
+        FROM products
+        WHERE tenant_id = $1
+      `,
+        [tenant.id]
+      );
+
+      const keywords = new Set();
+
+      currentProducts.rows.forEach((p) => {
+        if (p.category) {
+          keywords.add(p.category.toLowerCase());
+        }
+
+        if (p.tags) {
+          p.tags
+            .split(",")
+            .map((t) => t.trim().toLowerCase())
+            .forEach((t) => keywords.add(t));
+        }
+      });
+
+      const allProducts = await pool.query(`
+        SELECT
+          p.id,
+          p.title,
+          p.category,
+          p.tags,
+          t.id as tenant_id,
+          t.store_name,
+          t.store_slug
+        FROM products p
+        INNER JOIN tenants t ON t.id = p.tenant_id
+        WHERE p.status = 'published'
+      `);
+
+      const matchesMap = {};
+
+      allProducts.rows.forEach((product) => {
+        if (product.tenant_id === tenant.id) return;
+
+        let score = 0;
+
+        const category = (product.category || "").toLowerCase();
+
+        if (keywords.has(category)) {
+          score += 3;
+        }
+
+        if (product.tags) {
+          product.tags
+            .split(",")
+            .map((t) => t.trim().toLowerCase())
+            .forEach((tag) => {
+              if (keywords.has(tag)) {
+                score += 1;
+              }
+            });
+        }
+
+        if (score > 0) {
+          if (!matchesMap[product.tenant_id]) {
+            matchesMap[product.tenant_id] = {
+              tenant_id: product.tenant_id,
+              store_name: product.store_name,
+              store_slug: product.store_slug,
+              score: 0,
+              products: [],
+            };
+          }
+
+          matchesMap[product.tenant_id].score += score;
+
+          matchesMap[product.tenant_id].products.push({
+            id: product.id,
+            title: product.title,
+            category: product.category,
+          });
+        }
+      });
+
+      const matches = Object.values(matchesMap)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+
+      return res.json({
+        matches,
+      });
+    } catch (err) {
+      console.error(err);
+
+      return res.status(500).json({
+        error: "Errore caricamento match partnership",
+      });
+    }
+  }
+);
+
+// CREA PARTNERSHIP
+app.post(
+  "/api/vendor/partnerships",
+  authenticateVendor,
+  async (req, res) => {
+    const { receiver_tenant_id, title, message } = req.body;
+
+    if (!receiver_tenant_id || !title || !message) {
+      return res.status(400).json({
+        error: "Campi obbligatori mancanti",
+      });
+    }
+
+    try {
+      const vendorId = req.user.id;
+
+      const senderTenantResult = await pool.query(
+        `
+        SELECT id
+        FROM tenants
+        WHERE owner_user_id = $1
+        LIMIT 1
+      `,
+        [vendorId]
+      );
+
+      if (!senderTenantResult.rows.length) {
+        return res.status(404).json({
+          error: "Store mittente non trovato",
+        });
+      }
+
+      const requesterTenantId = senderTenantResult.rows[0].id;
+
+      const receiverTenantResult = await pool.query(
+        `
+        SELECT id, owner_user_id
+        FROM tenants
+        WHERE id = $1
+        LIMIT 1
+      `,
+        [receiver_tenant_id]
+      );
+
+      if (!receiverTenantResult.rows.length) {
+        return res.status(404).json({
+          error: "Store destinatario non trovato",
+        });
+      }
+
+      const receiverTenant = receiverTenantResult.rows[0];
+
+      const result = await pool.query(
+        `
+        INSERT INTO vendor_partnerships (
+          requester_vendor_id,
+          receiver_vendor_id,
+          requester_tenant_id,
+          receiver_tenant_id,
+          title,
+          message,
+          status
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,'pending')
+        RETURNING *
+      `,
+        [
+          vendorId,
+          receiverTenant.owner_user_id,
+          requesterTenantId,
+          receiver_tenant_id,
+          title,
+          message,
+        ]
+      );
+
+      return res.json({
+        partnership: result.rows[0],
+      });
+    } catch (err) {
+      console.error(err);
+
+      return res.status(500).json({
+        error: "Errore creazione partnership",
+      });
+    }
+  }
+);
+
+// LISTA PARTNERSHIP
+app.get(
+  "/api/vendor/partnerships",
+  authenticateVendor,
+  async (req, res) => {
+    try {
+      const vendorId = req.user.id;
+
+      const result = await pool.query(
+        `
+        SELECT
+          vp.*,
+
+          rt.store_name as receiver_store_name,
+          st.store_name as sender_store_name
+
+        FROM vendor_partnerships vp
+
+        LEFT JOIN tenants rt
+          ON rt.id = vp.receiver_tenant_id
+
+        LEFT JOIN tenants st
+          ON st.id = vp.requester_tenant_id
+
+        WHERE
+          vp.requester_vendor_id = $1
+          OR vp.receiver_vendor_id = $1
+
+        ORDER BY vp.created_at DESC
+      `,
+        [vendorId]
+      );
+
+      return res.json({
+        partnerships: result.rows,
+      });
+    } catch (err) {
+      console.error(err);
+
+      return res.status(500).json({
+        error: "Errore caricamento partnership",
+      });
+    }
+  }
+);
+
+// UPDATE STATUS
+app.patch(
+  "/api/vendor/partnerships/:id/status",
+  authenticateVendor,
+  async (req, res) => {
+    const { status } = req.body;
+
+    if (!["accepted", "declined", "closed"].includes(status)) {
+      return res.status(400).json({
+        error: "Status non valido",
+      });
+    }
+
+    try {
+      const vendorId = req.user.id;
+
+      const result = await pool.query(
+        `
+        UPDATE vendor_partnerships
+        SET
+          status = $1,
+          updated_at = NOW()
+        WHERE
+          id = $2
+          AND receiver_vendor_id = $3
+        RETURNING *
+      `,
+        [status, req.params.id, vendorId]
+      );
+
+      if (!result.rows.length) {
+        return res.status(404).json({
+          error: "Partnership non trovata",
+        });
+      }
+
+      return res.json({
+        partnership: result.rows[0],
+      });
+    } catch (err) {
+      console.error(err);
+
+      return res.status(500).json({
+        error: "Errore aggiornamento partnership",
+      });
+    }
+  }
+);
+
 /* =======================================================
    VENDOR PRODUCTS
 ======================================================= */
