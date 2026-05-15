@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_URL } from "@/lib/api";
+import { setCustomerToken } from "@/lib/auth";
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 export default function CustomerRegisterPage() {
   const router = useRouter();
@@ -14,6 +21,67 @@ export default function CustomerRegisterPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+
+    script.onload = () => {
+      if (!window.google) return;
+
+      window.google.accounts.id.initialize({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+        callback: handleGoogleLogin,
+      });
+
+      window.google.accounts.id.renderButton(
+        document.getElementById("google-register-button"),
+        {
+          theme: "outline",
+          size: "large",
+          shape: "pill",
+          width: "100%",
+        }
+      );
+    };
+
+    document.body.appendChild(script);
+
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    };
+  }, []);
+
+  async function handleGoogleLogin(response: any) {
+    setError("");
+
+    try {
+      const res = await fetch(`${API_URL}/api/customers/google-login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          credential: response.credential,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Errore registrazione Google");
+      }
+
+      setCustomerToken(data.token);
+      router.push("/customer/account");
+    } catch (err: any) {
+      setError(err.message || "Errore registrazione Google");
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -61,7 +129,7 @@ export default function CustomerRegisterPage() {
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-[#5b667a]">
-              Crea il tuo account per gestire ordini, indirizzi e assistenza.
+              Crea il tuo account oppure continua subito con Google.
             </p>
           </div>
 
@@ -70,6 +138,20 @@ export default function CustomerRegisterPage() {
               {error}
             </div>
           ) : null}
+
+          <div id="google-register-button" className="mb-5 flex justify-center" />
+
+          <div className="relative mb-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-[#e6eaf2]" />
+            </div>
+
+            <div className="relative flex justify-center">
+              <span className="bg-white px-4 text-xs font-bold uppercase tracking-[0.2em] text-[#94a3b8]">
+                oppure
+              </span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="Nome">

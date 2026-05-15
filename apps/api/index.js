@@ -12,8 +12,12 @@ const { Parser } = require("json2csv");
 const Stripe = require("stripe");
 const crypto = require("crypto");
 const adminAuth = require("./middleware/adminAuth");
+const { OAuth2Client } = require("google-auth-library");
 const { Resend } = require("resend");
 const OpenAI = require("openai");
+const googleClient = process.env.GOOGLE_CLIENT_ID
+  ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
+  : null;
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
@@ -458,6 +462,76 @@ app.post("/api/customers/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Errore login cliente" });
+  }
+});
+
+app.post("/api/customers/google-login", async (req, res) => {
+  const { credential } = req.body;
+
+  if (!credential) {
+    return res.status(400).json({ error: "Credential Google mancante" });
+  }
+
+  if (!googleClient) {
+    return res.status(500).json({ error: "Google login non configurato" });
+  }
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: "Account Google non valido" });
+    }
+
+    const email = payload.email.toLowerCase();
+    const name = payload.name || email.split("@")[0];
+
+    let customerResult = await pool.query(
+      "SELECT * FROM customers WHERE email = $1",
+      [email]
+    );
+
+    let customer = customerResult.rows[0];
+
+    if (!customer) {
+      customerResult = await pool.query(
+        `
+        INSERT INTO customers (email, password, name)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        `,
+        [email, "GOOGLE_AUTH", name]
+      );
+
+      customer = customerResult.rows[0];
+    }
+
+    const token = jwt.sign(
+      {
+        customerId: customer.id,
+        email: customer.email,
+      },
+      "customer-secret",
+      { expiresIn: "7d" }
+    );
+
+    return res.json({
+      message: "Login Google cliente ok",
+      token,
+      customer: {
+        id: customer.id,
+        email: customer.email,
+        name: customer.name,
+      },
+    });
+  } catch (err) {
+    console.error("GOOGLE LOGIN ERROR:", err);
+    return res.status(500).json({ error: "Errore login Google" });
   }
 });
 

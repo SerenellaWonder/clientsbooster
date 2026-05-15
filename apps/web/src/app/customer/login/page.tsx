@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import { API_URL } from "@/lib/api";
 import { setCustomerToken } from "@/lib/auth";
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 export default function CustomerLoginPage() {
   const router = useRouter();
@@ -13,35 +20,130 @@ export default function CustomerLoginPage() {
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState("");
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  useEffect(() => {
+    const script = document.createElement("script");
 
-    try {
-      const res = await fetch(`${API_URL}/api/customers/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+    script.src = "https://accounts.google.com/gsi/client";
+
+    script.async = true;
+
+    script.defer = true;
+
+    script.onload = () => {
+      if (!window.google) return;
+
+      window.google.accounts.id.initialize({
+        client_id:
+          process.env
+            .NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+        callback:
+          handleGoogleLogin,
       });
+
+      window.google.accounts.id.renderButton(
+        document.getElementById(
+          "google-login-button"
+        ),
+        {
+          theme: "outline",
+          size: "large",
+          shape: "pill",
+          width: "100%",
+        }
+      );
+    };
+
+    document.body.appendChild(script);
+  }, []);
+
+  async function handleGoogleLogin(
+    response: any
+  ) {
+    try {
+      const res = await fetch(
+        `${API_URL}/api/customers/google-login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            credential:
+              response.credential,
+          }),
+        }
+      );
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Errore login cliente");
+        throw new Error(
+          data.error ||
+            "Errore login Google"
+        );
       }
 
       setCustomerToken(data.token);
-      router.push("/customer/account");
+
+      router.push(
+        "/customer/account"
+      );
     } catch (err: any) {
-      setError(err.message || "Errore login cliente");
+      setError(
+        err.message ||
+          "Errore login Google"
+      );
+    }
+  }
+
+  async function handleSubmit(
+    e: FormEvent
+  ) {
+    e.preventDefault();
+
+    setLoading(true);
+
+    setError("");
+
+    try {
+      const res = await fetch(
+        `${API_URL}/api/customers/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            "Errore login cliente"
+        );
+      }
+
+      setCustomerToken(data.token);
+
+      router.push(
+        "/customer/account"
+      );
+    } catch (err: any) {
+      setError(
+        err.message ||
+          "Errore login cliente"
+      );
     } finally {
       setLoading(false);
     }
@@ -61,7 +163,9 @@ export default function CustomerLoginPage() {
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-[#5b667a]">
-              Accedi al tuo account per controllare ordini, indirizzi e ticket.
+              Accedi al tuo account
+              oppure continua con
+              Google.
             </p>
           </div>
 
@@ -71,49 +175,80 @@ export default function CustomerLoginPage() {
             </div>
           ) : null}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-  <Field label="Email">
-    <input
-      type="email"
-      value={email}
-      onChange={(e) => setEmail(e.target.value)}
-      placeholder="nome@email.com"
-      required
-      className="mt-2 w-full rounded-2xl border border-[#dbe2ee] bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#2f7d4b]"
-    />
-  </Field>
+          <div
+            id="google-login-button"
+            className="mb-5 flex justify-center"
+          />
 
-  <Field label="Password">
-    <input
-      type="password"
-      value={password}
-      onChange={(e) => setPassword(e.target.value)}
-      placeholder="Inserisci la password"
-      required
-      className="mt-2 w-full rounded-2xl border border-[#dbe2ee] bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#2f7d4b]"
-    />
-  </Field>
+          <div className="relative mb-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-[#e6eaf2]" />
+            </div>
 
-  <div className="flex justify-end">
-    <Link
-      href="/customer/forgot-password"
-      className="text-sm font-semibold text-[#2f7d4b]"
-    >
-      Password dimenticata?
-    </Link>
-  </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-4 text-xs font-bold uppercase tracking-[0.2em] text-[#94a3b8]">
+                oppure
+              </span>
+            </div>
+          </div>
 
-  <button
-    type="submit"
-    disabled={loading}
-    className="mt-2 w-full rounded-full bg-[#2f7d4b] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
-  >
-    {loading ? "Accesso..." : "Accedi"}
-  </button>
-</form>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4"
+          >
+            <Field label="Email">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) =>
+                  setEmail(
+                    e.target.value
+                  )
+                }
+                placeholder="nome@email.com"
+                required
+                className="mt-2 w-full rounded-2xl border border-[#dbe2ee] bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#2f7d4b]"
+              />
+            </Field>
+
+            <Field label="Password">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(
+                    e.target.value
+                  )
+                }
+                placeholder="Inserisci la password"
+                required
+                className="mt-2 w-full rounded-2xl border border-[#dbe2ee] bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-[#2f7d4b]"
+              />
+            </Field>
+
+            <div className="flex justify-end">
+              <Link
+                href="/customer/forgot-password"
+                className="text-sm font-semibold text-[#2f7d4b]"
+              >
+                Password dimenticata?
+              </Link>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-2 w-full rounded-full bg-[#2f7d4b] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-50"
+            >
+              {loading
+                ? "Accesso..."
+                : "Accedi"}
+            </button>
+          </form>
 
           <div className="mt-5 border-t border-[#eef2f7] pt-5 text-sm text-[#5b667a]">
-            Non hai ancora un account?{" "}
+            Non hai ancora un
+            account?{" "}
             <Link
               href="/customer/register"
               className="font-semibold text-[#2f7d4b]"
@@ -123,7 +258,10 @@ export default function CustomerLoginPage() {
           </div>
 
           <div className="mt-3 text-sm text-[#5b667a]">
-            <Link href="/" className="font-semibold text-[#2f7d4b]">
+            <Link
+              href="/"
+              className="font-semibold text-[#2f7d4b]"
+            >
               Torna al marketplace
             </Link>
           </div>
@@ -145,6 +283,7 @@ function Field({
       <label className="text-xs font-bold uppercase tracking-[0.18em] text-[#5b667a]">
         {label}
       </label>
+
       {children}
     </div>
   );

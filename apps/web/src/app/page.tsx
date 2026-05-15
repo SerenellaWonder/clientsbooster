@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { API_URL } from "@/lib/api";
 import Footer from "@/components/home/footer";
+import AiProductSearch from "@/components/home/ai-product-search";
 import {
   ArrowRight,
   BarChart3,
@@ -126,6 +127,8 @@ export default async function Home() {
               Catalogo, ordini, store pubblici e gestione operativa in un unico
               ecosistema pensato per chi vuole crescere davvero.
             </p>
+
+              <AiProductSearch products={products} />
 
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
