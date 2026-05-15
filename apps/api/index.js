@@ -529,316 +529,250 @@ app.get("/api/vendor/dashboard", authMiddleware, async (req, res) => {
 // VENDOR PARTNERSHIPS
 // ===============================
 
-// MATCH COMPATIBILI
-app.get(
-  "/api/vendor/partnerships/matches",
-  authMiddleware,
-  async (req, res) => {
-    try {
-      const vendorId = req.user.id;
+app.get("/api/vendor/partnerships/matches", authMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.user.tenantId;
 
-      const tenantResult = await pool.query(
-        `
-        SELECT id, store_name
-        FROM tenants
-        WHERE owner_user_id = $1
-        LIMIT 1
+    if (!tenantId) {
+      return res.status(404).json({ error: "Store non trovato" });
+    }
+
+    const currentProducts = await pool.query(
+      `
+      SELECT category, tags
+      FROM products
+      WHERE tenant_id = $1
       `,
-        [vendorId]
-      );
+      [tenantId]
+    );
 
-      if (!tenantResult.rows.length) {
-        return res.status(404).json({
-          error: "Store non trovato",
-        });
+    const keywords = new Set();
+
+    currentProducts.rows.forEach((p) => {
+      if (p.category) keywords.add(String(p.category).toLowerCase());
+
+      if (p.tags) {
+        String(p.tags)
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+          .forEach((t) => keywords.add(t));
       }
+    });
 
-      const tenant = tenantResult.rows[0];
-
-      // categorie/tag del venditore corrente
-      const currentProducts = await pool.query(
-        `
-        SELECT category, tags
-        FROM products
-        WHERE tenant_id = $1
+    const allProducts = await pool.query(
+      `
+      SELECT
+        p.id,
+        p.title,
+        p.category,
+        p.tags,
+        t.id AS tenant_id,
+        t.name AS store_name,
+        t.slug AS store_slug
+      FROM products p
+      JOIN tenants t ON t.id = p.tenant_id
+      WHERE p.status = 'published'
+        AND p.tenant_id <> $1
       `,
-        [tenant.id]
-      );
+      [tenantId]
+    );
 
-      const keywords = new Set();
+    const matchesMap = {};
 
-      currentProducts.rows.forEach((p) => {
-        if (p.category) {
-          keywords.add(p.category.toLowerCase());
-        }
+    allProducts.rows.forEach((product) => {
+      let score = 0;
 
-        if (p.tags) {
-          p.tags
-            .split(",")
-            .map((t) => t.trim().toLowerCase())
-            .forEach((t) => keywords.add(t));
-        }
-      });
+      const category = String(product.category || "").toLowerCase();
 
-      const allProducts = await pool.query(`
-        SELECT
-          p.id,
-          p.title,
-          p.category,
-          p.tags,
-          t.id as tenant_id,
-          t.store_name,
-          t.store_slug
-        FROM products p
-        INNER JOIN tenants t ON t.id = p.tenant_id
-        WHERE p.status = 'published'
-      `);
+      if (category && keywords.has(category)) score += 3;
 
-      const matchesMap = {};
-
-      allProducts.rows.forEach((product) => {
-        if (product.tenant_id === tenant.id) return;
-
-        let score = 0;
-
-        const category = (product.category || "").toLowerCase();
-
-        if (keywords.has(category)) {
-          score += 3;
-        }
-
-        if (product.tags) {
-          product.tags
-            .split(",")
-            .map((t) => t.trim().toLowerCase())
-            .forEach((tag) => {
-              if (keywords.has(tag)) {
-                score += 1;
-              }
-            });
-        }
-
-        if (score > 0) {
-          if (!matchesMap[product.tenant_id]) {
-            matchesMap[product.tenant_id] = {
-              tenant_id: product.tenant_id,
-              store_name: product.store_name,
-              store_slug: product.store_slug,
-              score: 0,
-              products: [],
-            };
-          }
-
-          matchesMap[product.tenant_id].score += score;
-
-          matchesMap[product.tenant_id].products.push({
-            id: product.id,
-            title: product.title,
-            category: product.category,
+      if (product.tags) {
+        String(product.tags)
+          .split(",")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean)
+          .forEach((tag) => {
+            if (keywords.has(tag)) score += 1;
           });
+      }
+
+      if (score === 0) score = 1;
+      if (score > 0) {
+        if (!matchesMap[product.tenant_id]) {
+          matchesMap[product.tenant_id] = {
+            tenant_id: product.tenant_id,
+            store_name: product.store_name,
+            store_slug: product.store_slug,
+            score: 0,
+            products: [],
+          };
         }
-      });
 
-      const matches = Object.values(matchesMap)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
+        matchesMap[product.tenant_id].score += score;
 
-      return res.json({
-        matches,
-      });
-    } catch (err) {
-      console.error(err);
+        matchesMap[product.tenant_id].products.push({
+          id: product.id,
+          title: product.title,
+          category: product.category,
+        });
+      }
+    });
 
-      return res.status(500).json({
-        error: "Errore caricamento match partnership",
-      });
-    }
+    const matches = Object.values(matchesMap)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    return res.json({ matches });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      error: "Errore caricamento match partnership",
+    });
   }
-);
+});
 
-// CREA PARTNERSHIP
-app.post(
-  "/api/vendor/partnerships",
-  authMiddleware,
-  async (req, res) => {
-    const { receiver_tenant_id, title, message } = req.body;
+app.post("/api/vendor/partnerships", authMiddleware, async (req, res) => {
+  const { receiver_tenant_id, title, message } = req.body;
 
-    if (!receiver_tenant_id || !title || !message) {
+  if (!receiver_tenant_id || !title || !message) {
+    return res.status(400).json({ error: "Campi obbligatori mancanti" });
+  }
+
+  try {
+    const vendorId = req.user.userId;
+    const requesterTenantId = req.user.tenantId;
+
+    if (!vendorId || !requesterTenantId) {
+      return res.status(404).json({ error: "Store mittente non trovato" });
+    }
+
+    if (Number(receiver_tenant_id) === Number(requesterTenantId)) {
       return res.status(400).json({
-        error: "Campi obbligatori mancanti",
+        error: "Non puoi proporre una partnership al tuo stesso store",
       });
     }
 
-    try {
-      const vendorId = req.user.id;
-
-      const senderTenantResult = await pool.query(
-        `
-        SELECT id
-        FROM tenants
-        WHERE owner_user_id = $1
-        LIMIT 1
+    const receiverUserResult = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE tenant_id = $1 AND role <> 'admin'
+      ORDER BY id ASC
+      LIMIT 1
       `,
-        [vendorId]
-      );
+      [receiver_tenant_id]
+    );
 
-      if (!senderTenantResult.rows.length) {
-        return res.status(404).json({
-          error: "Store mittente non trovato",
-        });
-      }
-
-      const requesterTenantId = senderTenantResult.rows[0].id;
-
-      const receiverTenantResult = await pool.query(
-        `
-        SELECT id, owner_user_id
-        FROM tenants
-        WHERE id = $1
-        LIMIT 1
-      `,
-        [receiver_tenant_id]
-      );
-
-      if (!receiverTenantResult.rows.length) {
-        return res.status(404).json({
-          error: "Store destinatario non trovato",
-        });
-      }
-
-      const receiverTenant = receiverTenantResult.rows[0];
-
-      const result = await pool.query(
-        `
-        INSERT INTO vendor_partnerships (
-          requester_vendor_id,
-          receiver_vendor_id,
-          requester_tenant_id,
-          receiver_tenant_id,
-          title,
-          message,
-          status
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,'pending')
-        RETURNING *
-      `,
-        [
-          vendorId,
-          receiverTenant.owner_user_id,
-          requesterTenantId,
-          receiver_tenant_id,
-          title,
-          message,
-        ]
-      );
-
-      return res.json({
-        partnership: result.rows[0],
-      });
-    } catch (err) {
-      console.error(err);
-
-      return res.status(500).json({
-        error: "Errore creazione partnership",
+    if (!receiverUserResult.rows.length) {
+      return res.status(404).json({
+        error: "Venditore destinatario non trovato",
       });
     }
+
+    const receiverVendorId = receiverUserResult.rows[0].id;
+
+    const result = await pool.query(
+      `
+      INSERT INTO vendor_partnerships (
+        requester_vendor_id,
+        receiver_vendor_id,
+        requester_tenant_id,
+        receiver_tenant_id,
+        title,
+        message,
+        status
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,'pending')
+      RETURNING *
+      `,
+      [
+        vendorId,
+        receiverVendorId,
+        requesterTenantId,
+        receiver_tenant_id,
+        title,
+        message,
+      ]
+    );
+
+    return res.json({ partnership: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      error: "Errore creazione partnership",
+    });
   }
-);
+});
 
-// LISTA PARTNERSHIP
-app.get(
-  "/api/vendor/partnerships",
-  authMiddleware,
-  async (req, res) => {
-    try {
-      const vendorId = req.user.id;
+app.get("/api/vendor/partnerships", authMiddleware, async (req, res) => {
+  try {
+    const vendorId = req.user.userId;
 
-      const result = await pool.query(
-        `
-        SELECT
-          vp.*,
-
-          rt.store_name as receiver_store_name,
-          st.store_name as sender_store_name
-
-        FROM vendor_partnerships vp
-
-        LEFT JOIN tenants rt
-          ON rt.id = vp.receiver_tenant_id
-
-        LEFT JOIN tenants st
-          ON st.id = vp.requester_tenant_id
-
-        WHERE
-          vp.requester_vendor_id = $1
-          OR vp.receiver_vendor_id = $1
-
-        ORDER BY vp.created_at DESC
+    const result = await pool.query(
+      `
+      SELECT
+        vp.*,
+        rt.name AS receiver_store_name,
+        st.name AS sender_store_name
+      FROM vendor_partnerships vp
+      LEFT JOIN tenants rt ON rt.id = vp.receiver_tenant_id
+      LEFT JOIN tenants st ON st.id = vp.requester_tenant_id
+      WHERE
+        vp.requester_vendor_id = $1
+        OR vp.receiver_vendor_id = $1
+      ORDER BY vp.created_at DESC
       `,
-        [vendorId]
-      );
+      [vendorId]
+    );
 
-      return res.json({
-        partnerships: result.rows,
-      });
-    } catch (err) {
-      console.error(err);
-
-      return res.status(500).json({
-        error: "Errore caricamento partnership",
-      });
-    }
+    return res.json({ partnerships: result.rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      error: "Errore caricamento partnership",
+    });
   }
-);
+});
 
-// UPDATE STATUS
-app.patch(
-  "/api/vendor/partnerships/:id/status",
-  authMiddleware,
-  async (req, res) => {
-    const { status } = req.body;
+app.patch("/api/vendor/partnerships/:id/status", authMiddleware, async (req, res) => {
+  const { status } = req.body;
 
-    if (!["accepted", "declined", "closed"].includes(status)) {
-      return res.status(400).json({
-        error: "Status non valido",
-      });
-    }
+  if (!["accepted", "declined", "closed"].includes(status)) {
+    return res.status(400).json({ error: "Status non valido" });
+  }
 
-    try {
-      const vendorId = req.user.id;
+  try {
+    const vendorId = req.user.userId;
 
-      const result = await pool.query(
-        `
-        UPDATE vendor_partnerships
-        SET
-          status = $1,
-          updated_at = NOW()
-        WHERE
-          id = $2
-          AND receiver_vendor_id = $3
-        RETURNING *
+    const result = await pool.query(
+      `
+      UPDATE vendor_partnerships
+      SET
+        status = $1,
+        updated_at = NOW()
+      WHERE
+        id = $2
+        AND receiver_vendor_id = $3
+      RETURNING *
       `,
-        [status, req.params.id, vendorId]
-      );
+      [status, req.params.id, vendorId]
+    );
 
-      if (!result.rows.length) {
-        return res.status(404).json({
-          error: "Partnership non trovata",
-        });
-      }
-
-      return res.json({
-        partnership: result.rows[0],
-      });
-    } catch (err) {
-      console.error(err);
-
-      return res.status(500).json({
-        error: "Errore aggiornamento partnership",
+    if (!result.rows.length) {
+      return res.status(404).json({
+        error: "Partnership non trovata",
       });
     }
+
+    return res.json({ partnership: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      error: "Errore aggiornamento partnership",
+    });
   }
-);
+});
 
 /* =======================================================
    VENDOR PRODUCTS
@@ -3329,6 +3263,9 @@ Funzionalità del portale:
 - area admin con overview, clienti, venditori e ordini
 - chat Booster Assistant
 - ticket supporto non ancora completi
+- partnership venditore-venditore con matching tra store
+- proposte private di collaborazione commerciale tra venditori
+- bundle, cross-selling, referral e campagne comuni tra store
 
 Contesto live:
 ${JSON.stringify(liveContext, null, 2)}
@@ -3350,6 +3287,9 @@ Regole:
 - se sale_price è presente, usa sale_price come prezzo principale
 - suggerisci alternative simili solo se sono presenti nei prodotti trovati
 - fai domande utili per aiutare l'utente a scegliere
+- se un venditore chiede partner, collaborazioni, bundle, cross-selling o strategie B2B, indirizzalo a /dashboard/partnerships
+- spiega che nella pagina Partnership può vedere store compatibili, inviare proposte private, accettare o rifiutare partnership
+- proponi idee concrete di collaborazione: bundle, promozioni incrociate, referral, eventi comuni, campagne marketplace
     `.trim();
 
     const messages = [

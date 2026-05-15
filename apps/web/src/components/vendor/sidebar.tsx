@@ -20,6 +20,7 @@ const links = [
   { href: "/dashboard/products", label: "Prodotti" },
   { href: "/dashboard/orders", label: "Ordini" },
   { href: "/dashboard/messages", label: "Chat clienti" },
+  { href: "/dashboard/partnerships", label: "Partnership" },
   { href: "/dashboard/support", label: "Ticket" },
 ];
 

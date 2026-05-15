@@ -216,13 +216,15 @@ export default function BoosterChatWidget() {
 
   const suggestions = useMemo(() => {
     if (role === "vendor") {
-      return [
-        "Come aumento le vendite?",
-        "Come collaboro con altri negozi?",
-        "Analizza il mio catalogo",
-        "Come miglioro i prodotti?",
-      ];
-    }
+  return [
+    "Trova partner per il mio store",
+    "Come aumento le vendite?",
+    "Come collaboro con altri negozi?",
+    "Analizza il mio catalogo",
+    "Come miglioro i prodotti?",
+    "Suggeriscimi partnership commerciali",
+  ];
+}
 
     if (role === "customer") {
       return [
@@ -250,13 +252,14 @@ export default function BoosterChatWidget() {
 
   const coachMessages = useMemo(() => {
     if (role === "vendor") {
-      return [
-        "🚀 Booster ti guida fino alla crescita del negozio.",
-        "📦 Pubblica prodotti chiari e con immagini professionali.",
-        "🤝 Cerca partnership con altri venditori.",
-        "📈 Booster può aiutarti a generare più ordini.",
-      ];
-    }
+  return [
+    "🚀 Booster ti guida dalla creazione store fino alle partnership commerciali.",
+    "📦 Pubblica prodotti professionali per aumentare conversioni e fiducia.",
+    "🤝 Cerca venditori compatibili e crea collaborazioni private.",
+    "📈 Booster AI può suggerirti bundle, cross-selling e strategie vendita.",
+    "💬 Apri partnership tra store e costruisci relazioni commerciali.",
+  ];
+}
 
     if (role === "customer") {
       return [
@@ -387,9 +390,16 @@ export default function BoosterChatWidget() {
           role,
           pathname,
           history: nextMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+  role: m.role,
+  content: m.content,
+})),
+
+context: {
+  cartCount,
+  vendorStats,
+  productPageId,
+  pathname,
+},
         }),
       });
 
@@ -546,21 +556,28 @@ export default function BoosterChatWidget() {
                 ))}
               </div>
 
-              <div className="mt-4 flex gap-2">
-                <Link
-                  href="/dashboard/products/new"
-                  className="rounded-full bg-[#0d5b82] px-3 py-2 text-xs font-black text-white"
-                >
-                  Nuovo prodotto
-                </Link>
+              <div className="mt-4 flex flex-wrap gap-2">
+  <Link
+    href="/dashboard/products/new"
+    className="rounded-full bg-[#0d5b82] px-3 py-2 text-xs font-black text-white"
+  >
+    Nuovo prodotto
+  </Link>
 
-                <Link
-                  href="/dashboard/products"
-                  className="rounded-full border border-[#dbe2ee] px-3 py-2 text-xs font-black text-[#334155]"
-                >
-                  Catalogo
-                </Link>
-              </div>
+  <Link
+    href="/dashboard/products"
+    className="rounded-full border border-[#dbe2ee] px-3 py-2 text-xs font-black text-[#334155]"
+  >
+    Catalogo
+  </Link>
+
+  <Link
+    href="/dashboard/partnerships"
+    className="rounded-full border border-[#dbe2ee] bg-white px-3 py-2 text-xs font-black text-[#334155]"
+  >
+    Partnership
+  </Link>
+</div>
             </div>
           ) : null}
 
