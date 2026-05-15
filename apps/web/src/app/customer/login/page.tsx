@@ -35,13 +35,17 @@ export default function CustomerLoginPage() {
     script.onload = () => {
       if (!window.google) return;
 
-      window.google.accounts.id.initialize({
-        client_id:
-          process.env
-            .NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-        callback:
-          handleGoogleLogin,
-      });
+     const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+if (!googleClientId) {
+  setError("Google login non configurato");
+  return;
+}
+
+window.google.accounts.id.initialize({
+  client_id: googleClientId,
+  callback: handleGoogleLogin,
+});
 
       window.google.accounts.id.renderButton(
         document.getElementById(
