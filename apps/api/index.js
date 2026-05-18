@@ -9,6 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const { parse } = require("csv-parse/sync");
 const { Parser } = require("json2csv");
+const { createEmbedding } = require("./lib/embeddings");
 const Stripe = require("stripe");
 const crypto = require("crypto");
 const adminAuth = require("./middleware/adminAuth");
@@ -979,43 +980,62 @@ app.post("/api/vendor/products", authMiddleware, async (req, res) => {
   } = req.body;
 
   try {
-    const tenantId = req.user.tenantId;
-    const slug = slugify(title);
+  const tenantId = req.user.tenantId;
+  const slug = slugify(title);
 
-    const result = await pool.query(
-      `
-      INSERT INTO products (
-        tenant_id,
-        title,
-        slug,
-        description,
-        price,
-        status,
-        category,
-        tags,
-        sku,
-        stock,
-        compare_at_price,
-        sale_price
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      RETURNING *
-      `,
-      [
-        tenantId,
-        title,
-        slug,
-        description || "",
-        Number(price),
-        "draft",
-        category || "",
-        parseTags(tags),
-        sku || "",
-        Number(stock || 0),
-        compare_at_price ? Number(compare_at_price) : null,
-        sale_price ? Number(sale_price) : null,
-      ]
-    );
+  const embeddingText = `
+${title}
+${description || ""}
+${category || ""}
+${tags || ""}
+`;
+
+  const embedding =
+    await createEmbedding(embeddingText);
+
+  const result = await pool.query(
+    `
+    INSERT INTO products (
+      tenant_id,
+      title,
+      slug,
+      description,
+      price,
+      status,
+      category,
+      tags,
+      sku,
+      stock,
+      compare_at_price,
+      sale_price,
+      embedding
+    )
+    VALUES (
+      $1,$2,$3,$4,$5,$6,
+      $7,$8,$9,$10,$11,$12,$13
+    )
+    RETURNING *
+    `,
+    [
+      tenantId,
+      title,
+      slug,
+      description || "",
+      Number(price),
+      "draft",
+      category || "",
+      parseTags(tags),
+      sku || "",
+      Number(stock || 0),
+      compare_at_price
+        ? Number(compare_at_price)
+        : null,
+      sale_price
+        ? Number(sale_price)
+        : null,
+      JSON.stringify(embedding),
+    ]
+  );
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -3290,6 +3310,99 @@ async function searchCatalogForAi(message) {
   }
 }
 
+// ===============================
+// AI PRODUCT SEMANTIC SEARCH
+// ===============================
+
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return 0;
+  }
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  if (!normA || !normB) return 0;
+
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+app.post("/api/ai/product-search", async (req, res) => {
+  const { query } = req.body;
+
+  if (!query || !query.trim()) {
+    return res.status(400).json({ error: "Query obbligatoria" });
+  }
+
+  try {
+    const queryEmbedding = await createEmbedding(query);
+
+    if (!queryEmbedding) {
+      return res.status(500).json({
+        error: "Embedding AI non disponibile",
+      });
+    }
+
+    const result = await pool.query(`
+      SELECT
+        p.id,
+        p.title,
+        p.slug,
+        p.description,
+        p.price,
+        p.sale_price,
+        p.image_url,
+        p.category,
+        p.tags,
+        p.embedding,
+        t.name AS store_name,
+        t.slug AS store_slug
+      FROM products p
+      LEFT JOIN tenants t ON t.id = p.tenant_id
+      WHERE p.status = 'published'
+        AND p.embedding IS NOT NULL
+    `);
+
+    const products = result.rows
+      .map((product) => {
+        let productEmbedding = null;
+
+        try {
+          productEmbedding = JSON.parse(product.embedding);
+        } catch {
+          productEmbedding = null;
+        }
+
+        const similarity = cosineSimilarity(queryEmbedding, productEmbedding);
+
+        return {
+          ...product,
+          embedding: undefined,
+          similarity,
+        };
+      })
+      .filter((product) => product.similarity > 0.15)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 8);
+
+    return res.json({
+      products,
+    });
+  } catch (err) {
+    console.error("AI PRODUCT SEARCH ERROR:", err);
+
+    return res.status(500).json({
+      error: "Errore ricerca AI prodotti",
+    });
+  }
+});
 
 app.post("/api/ai/chat", async (req, res) => {
   const { message, role, pathname, history } = req.body;
@@ -3400,6 +3513,8 @@ Regole:
     });
   }
 });
+
+
 
 /* =======================================================
    SUPPORT TICKETS
