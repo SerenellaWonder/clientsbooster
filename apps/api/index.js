@@ -229,6 +229,12 @@ app.get("/api/test", (_req, res) => {
   res.json({ message: "API works 🚀" });
 });
 
+app.get("/api/debug/openai", (_req, res) => {
+  res.json({
+    hasKey: !!process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL || null,
+  });
+});
 /* =======================================================
    AUTH VENDITORE
 ======================================================= */
